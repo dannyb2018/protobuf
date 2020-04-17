@@ -92,6 +92,7 @@ def GenerateUnittestProtos():
   generate_proto("../src/google/protobuf/unittest_mset_wire_format.proto", False)
   generate_proto("../src/google/protobuf/unittest_no_generic_services.proto", False)
   generate_proto("../src/google/protobuf/unittest_proto3_arena.proto", False)
+  generate_proto("../src/google/protobuf/util/json_format.proto", False)
   generate_proto("../src/google/protobuf/util/json_format_proto3.proto", False)
   generate_proto("google/protobuf/internal/any_test.proto", False)
   generate_proto("google/protobuf/internal/descriptor_pool_test1.proto", False)
@@ -109,6 +110,7 @@ def GenerateUnittestProtos():
   generate_proto("google/protobuf/internal/no_package.proto", False)
   generate_proto("google/protobuf/internal/packed_field_test.proto", False)
   generate_proto("google/protobuf/internal/test_bad_identifiers.proto", False)
+  generate_proto("google/protobuf/internal/test_proto3_optional.proto", False)
   generate_proto("google/protobuf/pyext/python.proto", False)
 
 

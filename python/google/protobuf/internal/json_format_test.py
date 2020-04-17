@@ -36,6 +36,7 @@ __author__ = 'jieluo@google.com (Jie Luo)'
 
 import json
 import math
+import struct
 import sys
 
 try:
@@ -52,8 +53,10 @@ from google.protobuf import wrappers_pb2
 from google.protobuf import any_test_pb2
 from google.protobuf import unittest_mset_pb2
 from google.protobuf import unittest_pb2
+from google.protobuf.internal import test_proto3_optional_pb2
 from google.protobuf import descriptor_pool
 from google.protobuf import json_format
+from google.protobuf.util import json_format_pb2
 from google.protobuf.util import json_format_proto3_pb2
 
 
@@ -247,6 +250,22 @@ class JsonFormatTest(JsonFormatBase):
     }
     self.assertEqual(golden_dict, message_dict)
 
+  def testExtensionSerializationDictMatchesProto3SpecMore(self):
+    """See go/proto3-json-spec for spec.
+    """
+    message = json_format_pb2.TestMessageWithExtension()
+    ext = json_format_pb2.TestExtension.ext
+    message.Extensions[ext].value = 'stuff'
+    message_dict = json_format.MessageToDict(
+        message
+    )
+    expected_dict = {
+        '[protobuf_unittest.TestExtension.ext]': {
+            'value': u'stuff',
+        },
+    }
+    self.assertEqual(expected_dict, message_dict)
+
 
   def testExtensionSerializationJsonMatchesProto3Spec(self):
     """See go/proto3-json-spec for spec.
@@ -320,6 +339,20 @@ class JsonFormatTest(JsonFormatBase):
                    '"repeatedMessageValue": []}'))
     parsed_message = json_format_proto3_pb2.TestMessage()
     self.CheckParseBack(message, parsed_message)
+
+  def testProto3Optional(self):
+    message = test_proto3_optional_pb2.TestProto3Optional()
+    self.assertEqual(
+        json.loads(
+            json_format.MessageToJson(
+                message, including_default_value_fields=True)),
+        json.loads('{}'))
+    message.optional_int32 = 0
+    self.assertEqual(
+        json.loads(
+            json_format.MessageToJson(
+                message, including_default_value_fields=True)),
+        json.loads('{"optionalInt32": 0}'))
 
   def testIntegersRepresentedAsFloat(self):
     message = json_format_proto3_pb2.TestMessage()
@@ -800,6 +833,44 @@ class JsonFormatTest(JsonFormatBase):
     json_format.Parse(text, message)
     self.assertEqual(message.repeated_float_value[0], float('inf'))
     self.assertAlmostEqual(message.repeated_float_value[1], 1.4028235e-39)
+
+  def testFloatPrecision(self):
+    message = json_format_proto3_pb2.TestMessage()
+    message.float_value = 1.123456789
+    # Set to 8 valid digits.
+    text = '{\n  "floatValue": 1.1234568\n}'
+    self.assertEqual(
+        json_format.MessageToJson(message, float_precision=8), text)
+    # Set to 7 valid digits.
+    text = '{\n  "floatValue": 1.123457\n}'
+    self.assertEqual(
+        json_format.MessageToJson(message, float_precision=7), text)
+
+    # Default float_precision will automatic print shortest float.
+    message.float_value = 1.1000000011
+    text = '{\n  "floatValue": 1.1\n}'
+    self.assertEqual(
+        json_format.MessageToJson(message), text)
+    message.float_value = 1.00000075e-36
+    text = '{\n  "floatValue": 1.00000075e-36\n}'
+    self.assertEqual(
+        json_format.MessageToJson(message), text)
+    message.float_value = 12345678912345e+11
+    text = '{\n  "floatValue": 1.234568e+24\n}'
+    self.assertEqual(
+        json_format.MessageToJson(message), text)
+
+    # Test a bunch of data and check json encode/decode do not
+    # lose precision
+    value_list = [0x00, 0xD8, 0x6E, 0x00]
+    msg2 = json_format_proto3_pb2.TestMessage()
+    for a in range(0, 256):
+      value_list[3] = a
+      for b in range(0, 256):
+        value_list[0] = b
+        byte_array = bytearray(value_list)
+        message.float_value = struct.unpack('<f', byte_array)[0]
+        self.CheckParseBack(message, msg2)
 
   def testParseEmptyText(self):
     self.CheckError('',

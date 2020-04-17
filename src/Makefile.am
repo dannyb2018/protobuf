@@ -18,7 +18,7 @@ else
 PTHREAD_DEF =
 endif
 
-PROTOBUF_VERSION = 19:0:0
+PROTOBUF_VERSION = 22:4:0
 
 if GCC
 # Turn on all warnings except for sign comparison (we ignore sign comparison
@@ -72,6 +72,7 @@ nobase_include_HEADERS =                                         \
   google/protobuf/stubs/hash.h                                   \
   google/protobuf/stubs/logging.h                                \
   google/protobuf/stubs/macros.h                                 \
+  google/protobuf/stubs/map_util.h                               \
   google/protobuf/stubs/mutex.h                                  \
   google/protobuf/stubs/once.h                                   \
   google/protobuf/stubs/platform_macros.h                        \
@@ -104,6 +105,7 @@ nobase_include_HEADERS =                                         \
   google/protobuf/has_bits.h                                     \
   google/protobuf/implicit_weak_message.h                        \
   google/protobuf/inlined_string_field.h                         \
+  google/protobuf/io/io_win32.h                                \
   google/protobuf/map_entry.h                                    \
   google/protobuf/map_entry_lite.h                               \
   google/protobuf/map_field.h                                    \
@@ -183,7 +185,6 @@ libprotobuf_lite_la_SOURCES =                                  \
   google/protobuf/stubs/int128.cc                              \
   google/protobuf/stubs/int128.h                               \
   google/protobuf/io/io_win32.cc                               \
-  google/protobuf/io/io_win32.h                                \
   google/protobuf/stubs/map_util.h                             \
   google/protobuf/stubs/mathutil.h                             \
   google/protobuf/stubs/status.cc                              \
@@ -212,7 +213,6 @@ libprotobuf_lite_la_SOURCES =                                  \
   google/protobuf/repeated_field.cc                            \
   google/protobuf/wire_format_lite.cc                          \
   google/protobuf/io/coded_stream.cc                           \
-  google/protobuf/io/coded_stream_inl.h                        \
   google/protobuf/io/strtod.cc                                 \
   google/protobuf/io/zero_copy_stream.cc                       \
   google/protobuf/io/zero_copy_stream_impl.cc                  \
@@ -228,8 +228,6 @@ libprotobuf_la_SOURCES =                                       \
   $(libprotobuf_lite_la_SOURCES)                               \
   google/protobuf/any.pb.cc                                    \
   google/protobuf/api.pb.cc                                    \
-  google/protobuf/stubs/mathlimits.cc                          \
-  google/protobuf/stubs/mathlimits.h                           \
   google/protobuf/any.cc                                       \
   google/protobuf/descriptor.cc                                \
   google/protobuf/descriptor_database.cc                       \
@@ -512,6 +510,7 @@ protoc_inputs =                                                   \
   google/protobuf/unittest_proto3_arena.proto                     \
   google/protobuf/unittest_proto3_arena_lite.proto                \
   google/protobuf/unittest_proto3_lite.proto                      \
+  google/protobuf/unittest_proto3_optional.proto                  \
   google/protobuf/unittest_well_known_types.proto                 \
   google/protobuf/util/internal/testdata/anys.proto               \
   google/protobuf/util/internal/testdata/books.proto              \
@@ -645,6 +644,8 @@ protoc_outputs =                                                  \
   google/protobuf/unittest_proto3_arena_lite.pb.h                 \
   google/protobuf/unittest_proto3_lite.pb.cc                      \
   google/protobuf/unittest_proto3_lite.pb.h                       \
+  google/protobuf/unittest_proto3_optional.pb.cc                  \
+  google/protobuf/unittest_proto3_optional.pb.h                   \
   google/protobuf/unittest_well_known_types.pb.cc                 \
   google/protobuf/unittest_well_known_types.pb.h                  \
   google/protobuf/util/internal/testdata/anys.pb.cc               \
@@ -688,7 +689,7 @@ else
 # relative to srcdir, which may not be the same as the current directory when
 # building out-of-tree.
 unittest_proto_middleman: protoc$(EXEEXT) $(protoc_inputs)
-	oldpwd=`pwd` && ( cd $(srcdir) && $$oldpwd/protoc$(EXEEXT) -I. --cpp_out=$$oldpwd $(protoc_inputs) )
+	oldpwd=`pwd` && ( cd $(srcdir) && $$oldpwd/protoc$(EXEEXT) -I. --cpp_out=$$oldpwd $(protoc_inputs) --experimental_allow_proto3_optional )
 	touch unittest_proto_middleman
 
 endif
@@ -698,7 +699,7 @@ $(protoc_outputs): unittest_proto_middleman
 COMMON_TEST_SOURCES =                                          \
   google/protobuf/arena_test_util.cc                           \
   google/protobuf/arena_test_util.h                            \
-  google/protobuf/map_test_util.cc                             \
+  google/protobuf/map_test_util.inc                            \
   google/protobuf/map_test_util.h                              \
   google/protobuf/map_test_util_impl.h                         \
   google/protobuf/test_util.cc                                 \
@@ -727,6 +728,9 @@ protobuf_test_CPPFLAGS = -I$(GOOGLETEST_SRC_DIR)/include \
 # since test_util.cc takes forever to compile with optimization (with GCC).
 # See configure.ac for more info.
 protobuf_test_CXXFLAGS = $(NO_OPT_CXXFLAGS)
+# Doesn't pass on Windows with MSVC
+NON_MSVC_TEST_SOURCES =                                        \
+  google/protobuf/compiler/command_line_interface_unittest.cc
 protobuf_test_SOURCES =                                        \
   google/protobuf/stubs/bytestream_unittest.cc                 \
   google/protobuf/stubs/common_unittest.cc                     \
@@ -772,7 +776,6 @@ protobuf_test_SOURCES =                                        \
   google/protobuf/io/zero_copy_stream_unittest.cc              \
   google/protobuf/compiler/annotation_test_util.h              \
   google/protobuf/compiler/annotation_test_util.cc             \
-  google/protobuf/compiler/command_line_interface_unittest.cc  \
   google/protobuf/compiler/importer_unittest.cc                \
   google/protobuf/compiler/mock_code_generator.cc              \
   google/protobuf/compiler/mock_code_generator.h               \
@@ -804,6 +807,7 @@ protobuf_test_SOURCES =                                        \
   google/protobuf/util/message_differencer_unittest.cc         \
   google/protobuf/util/time_util_test.cc                       \
   google/protobuf/util/type_resolver_util_test.cc              \
+  $(NON_MSVC_TEST_SOURCES)                                     \
   $(COMMON_TEST_SOURCES)
 nodist_protobuf_test_SOURCES = $(protoc_outputs)
 $(am_protobuf_test_OBJECTS): unittest_proto_middleman

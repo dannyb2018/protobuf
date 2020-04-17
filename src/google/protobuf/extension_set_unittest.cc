@@ -33,7 +33,6 @@
 //  Sanjay Ghemawat, Jeff Dean, and others.
 
 #include <google/protobuf/stubs/casts.h>
-
 #include <google/protobuf/stubs/strutil.h>
 #include <google/protobuf/test_util.h>
 #include <google/protobuf/test_util2.h>
@@ -1318,6 +1317,13 @@ TEST(ExtensionSetTest, DynamicExtensions) {
         dynamic_factory.GetPrototype(dynamic_message_extension->message_type());
     EXPECT_EQ(prototype, &sub_message);
   }
+}
+
+TEST(ExtensionSetTest, BoolExtension) {
+  unittest::TestAllExtensions msg;
+  uint8 wire_bytes[2] = {13 * 8, 42 /* out of bounds payload for bool */};
+  EXPECT_TRUE(msg.ParseFromArray(wire_bytes, 2));
+  EXPECT_TRUE(msg.GetExtension(protobuf_unittest::optional_bool_extension));
 }
 
 }  // namespace

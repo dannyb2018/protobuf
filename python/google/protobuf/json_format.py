@@ -60,6 +60,7 @@ import sys
 
 import six
 
+from google.protobuf.internal import type_checkers
 from google.protobuf import descriptor
 from google.protobuf import symbol_database
 
@@ -103,7 +104,8 @@ def MessageToJson(
     indent=2,
     sort_keys=False,
     use_integers_for_enums=False,
-    descriptor_pool=None):
+    descriptor_pool=None,
+    float_precision=None):
   """Converts protobuf message to JSON format.
 
   Args:
@@ -121,6 +123,7 @@ def MessageToJson(
     use_integers_for_enums: If true, print integers instead of enum names.
     descriptor_pool: A Descriptor Pool for resolving types. If None use the
         default.
+    float_precision: If set, use this to specify float field valid digits.
 
   Returns:
     A string containing the JSON formatted protocol buffer message.
@@ -129,7 +132,8 @@ def MessageToJson(
       including_default_value_fields,
       preserving_proto_field_name,
       use_integers_for_enums,
-      descriptor_pool)
+      descriptor_pool,
+      float_precision=float_precision)
   return printer.ToJsonString(message, indent, sort_keys)
 
 
@@ -138,7 +142,8 @@ def MessageToDict(
     including_default_value_fields=False,
     preserving_proto_field_name=False,
     use_integers_for_enums=False,
-    descriptor_pool=None):
+    descriptor_pool=None,
+    float_precision=None):
   """Converts protobuf message to a dictionary.
 
   When the dictionary is encoded to JSON, it conforms to proto3 JSON spec.
@@ -155,6 +160,7 @@ def MessageToDict(
     use_integers_for_enums: If true, print integers instead of enum names.
     descriptor_pool: A Descriptor Pool for resolving types. If None use the
         default.
+    float_precision: If set, use this to specify float field valid digits.
 
   Returns:
     A dict representation of the protocol buffer message.
@@ -163,7 +169,8 @@ def MessageToDict(
       including_default_value_fields,
       preserving_proto_field_name,
       use_integers_for_enums,
-      descriptor_pool)
+      descriptor_pool,
+      float_precision=float_precision)
   # pylint: disable=protected-access
   return printer._MessageToJsonObject(message)
 
@@ -182,11 +189,17 @@ class _Printer(object):
       including_default_value_fields=False,
       preserving_proto_field_name=False,
       use_integers_for_enums=False,
-      descriptor_pool=None):
+      descriptor_pool=None,
+      float_precision=None):
     self.including_default_value_fields = including_default_value_fields
     self.preserving_proto_field_name = preserving_proto_field_name
     self.use_integers_for_enums = use_integers_for_enums
     self.descriptor_pool = descriptor_pool
+    # TODO(jieluo): change the float precision default to 8 valid digits.
+    if float_precision:
+      self.float_format = '.{}g'.format(float_precision)
+    else:
+      self.float_format = None
 
   def ToJsonString(self, message, indent, sort_keys):
     js = self._MessageToJsonObject(message)
@@ -233,12 +246,8 @@ class _Printer(object):
           js[name] = [self._FieldToJsonObject(field, k)
                       for k in value]
         elif field.is_extension:
-          f = field
-          if (f.containing_type.GetOptions().message_set_wire_format and
-              f.type == descriptor.FieldDescriptor.TYPE_MESSAGE and
-              f.label == descriptor.FieldDescriptor.LABEL_OPTIONAL):
-            f = f.message_type
-          name = '[%s.%s]' % (f.full_name, name)
+          full_qualifier = field.full_name[:-len(field.name)]
+          name = '[%s%s]' % (full_qualifier, name)
           js[name] = self._FieldToJsonObject(field, value)
         else:
           js[name] = self._FieldToJsonObject(field, value)
@@ -257,7 +266,7 @@ class _Printer(object):
           else:
             name = field.json_name
           if name in js:
-            # Skip the field which has been serailized already.
+            # Skip the field which has been serialized already.
             continue
           if _IsMapEntry(field):
             js[name] = {}
@@ -274,6 +283,25 @@ class _Printer(object):
 
   def _FieldToJsonObject(self, field, value):
     """Converts field value according to Proto3 JSON Specification."""
+
+    def _ToShortestFloat(original):
+      """Returns the shortest float that has same value in wire."""
+      # Return the original value if it is not truncated. This may happen
+      # if someone mixes this code with an old protobuf runtime.
+      if type_checkers.TruncateToFourByteFloat(original) != original:
+        return original
+      # All 4 byte floats have between 6 and 9 significant digits, so we
+      # start with 6 as the lower bound.
+      # It has to be iterative because use '.9g' directly can not get rid
+      # of the noises for most values. For example if set a float_field=0.9
+      # use '.9g' will print 0.899999976.
+      precision = 6
+      rounded = float('{0:.{1}g}'.format(original, precision))
+      while type_checkers.TruncateToFourByteFloat(rounded) != original:
+        precision += 1
+        rounded = float('{0:.{1}g}'.format(original, precision))
+      return rounded
+
     if field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_MESSAGE:
       return self._MessageToJsonObject(value)
     elif field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_ENUM:
@@ -305,6 +333,12 @@ class _Printer(object):
           return _INFINITY
       if math.isnan(value):
         return _NAN
+      if field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_FLOAT:
+        if self.float_format:
+          return float(format(value, self.float_format))
+        else:
+          return _ToShortestFloat(value)
+
     return value
 
   def _AnyMessageToJsonObject(self, message):
@@ -493,10 +527,16 @@ class _Parser(object):
             raise ParseError('Message type {0} does not have extensions'.format(
                 message_descriptor.full_name))
           identifier = name[1:-1]  # strip [] brackets
-          identifier = '.'.join(identifier.split('.')[:-1])
           # pylint: disable=protected-access
           field = message.Extensions._FindExtensionByName(identifier)
           # pylint: enable=protected-access
+          if not field:
+            # Try looking for extension by the message type name, dropping the
+            # field name following the final . separator in full_name.
+            identifier = '.'.join(identifier.split('.')[:-1])
+            # pylint: disable=protected-access
+            field = message.Extensions._FindExtensionByName(identifier)
+            # pylint: enable=protected-access
         if not field:
           if self.ignore_unknown_fields:
             continue
